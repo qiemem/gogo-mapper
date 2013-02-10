@@ -23,18 +23,25 @@ extensions [ gogo ]
 
 globals [
   serial-port
+  test?
   max-dist        ;; If the sensor reads > max-dist, we say it didn't hit anything
   time-step       ;; how long actions are done for
   max-confidence  ;; A patch can't have solidity > max-confidence; a robot can have confidence > max-confidence, but it only helps in selection, not reproduction
 ]
 
 breed [ robots robot ]
+breed [ fauxgos fauxgo ]  ;; fake gogo board robot for testing
 breed [ echoes echo ]
 
 robots-own [
   sensor-range  ;; The sensors range in units of the distance the robot travels in time-step
   confidence    ;; Represents how confident we are in the bot
-  rotate-speed  ;; degrees the robot thinks it moves at a time
+  turn-speed  ;; degrees the robot thinks it moves at a time
+]
+
+fauxgos-own [
+  sensor-range
+  turn-speed
 ]
 
 echoes-own [
@@ -45,12 +52,14 @@ echoes-own [
 
 patches-own [
   solidity      ;; Represents how likely it is that the patch is solid
+  solid?        ;; used for testing
 ]
 
 
 to setup
   if not gogo:open? [ setup-gogo ]
   setup-brain
+  set test? false
 end
 
 to setup-gogo
@@ -65,6 +74,24 @@ to setup-gogo
   gogo:talk-to-output-ports [ "a" "b" "c" "d"]
 end
 
+to setup-test
+  setup-brain
+  create-fauxgos 1 [
+    set heading 0
+    set turn-speed 1 + random 9
+    set sensor-range 5 + random 15
+    set shape "turtle"
+    set size 3
+  ]
+  ask patches [
+    set solid? pxcor = min-pxcor or
+               pycor = min-pycor or
+               pxcor = max-pxcor or
+               pycor = max-pycor
+  ]
+  set test? true
+end
+
 to setup-brain
   ca
   
@@ -77,6 +104,7 @@ to setup-brain
     set size 5
     set sensor-range 10
     set confidence max-confidence
+    set turn-speed 5
   ]
 end
 
@@ -84,10 +112,8 @@ to go
   sensor-check
   select-robots
   ask robots [reproduce]
-  ifelse sense-dist > 300 [robots-fd] [robots-bk]
+  ifelse sense-dist > 300 [robots-fd] [robots-rt robots-bk]
 end
-
-
 
 ;; observer procedure
 ;; Adjusts robots' confidences and patches' solidities based on sensor reading.
@@ -104,7 +130,19 @@ end
 
 ;; This method will be replaced by whatever scheme we use to send the distance measure via the antennas
 to-report sense-dist
-  report gogo:sensor 1
+  ifelse test? [
+    let dist 0
+    ask fauxgos [
+      hatch-echoes 1 [
+        while [distance myself < sensor-range and not [solid?] of patch-here and can-move? .5] [
+          fd .5
+        ]
+        set dist distance myself
+        die
+      ]
+    ]
+    report max-dist * (random-normal 0 1 + dist) / [sensor-range] of one-of fauxgos
+  ] [report gogo:sensor 1]
 end
 
 ;; robot procedure
@@ -129,7 +167,7 @@ to fire-echo
     set parent myself
   ]
   ask echoes with [parent = myself] [
-    while [distance myself < dist] [
+    while [distance myself < dist and can-move? echo-speed] [
       let cur-patch patch-here
       ask parent [set confidence confidence + vacant-patch-reward-factor * (5 - [solidity] of cur-patch) / 10]
       fd echo-speed
@@ -178,29 +216,63 @@ to reproduce
     rt random-normal 0 1
     set sensor-range sensor-range + random-normal 0 .1
     set color 5 + 10 * random 14
+    set turn-speed turn-speed + random-normal 0 1
   ]
 end
 
 to robots-fd
-  ask robots [fd 1]
-  gogo:talk-to-output-ports ["a" "b"]
-  gogo:set-output-port-power 7
-  gogo:output-port-on
-  wait time-step
-  gogo:output-port-off
+  ask robots [fd random-normal 1 0.1]
+  ifelse test? [
+    ask fauxgos [
+      let dist random-normal 1 0.1
+      fd dist
+      if [solid?] of patch-here [bk dist]
+    ]
+  ] [
+    gogo:talk-to-output-ports ["a" "b"]
+    gogo:set-output-port-power 7
+    gogo:output-port-on
+    wait time-step
+    gogo:output-port-off
+  ]
 end
 
 to robots-bk
-  ask robots [bk 1]
-  gogo:talk-to-output-ports ["a" "b"]
-  gogo:set-output-port-power 7
-  gogo:output-port-reverse
-  gogo:output-port-on
-  wait time-step
-  gogo:output-port-off
-  gogo:output-port-reverse
+  ask robots [bk random-normal 1 0.1]
+  ifelse test? [
+    ask fauxgos [
+      let dist random-normal 1 0.1
+      bk dist
+      if [solid?] of patch-here [fd dist]
+    ]
+  ] [
+    gogo:talk-to-output-ports ["a" "b"]
+    gogo:set-output-port-power 7
+    gogo:output-port-reverse
+    gogo:output-port-on
+    wait time-step
+    gogo:output-port-off
+    gogo:output-port-reverse
+  ]
 end
-  
+
+to robots-rt
+  ask robots [rt turn-speed]
+  ifelse test? [
+    ask fauxgos [rt random-normal turn-speed 0.01]
+  ] [
+  ;; TODO
+  ]
+end
+
+to robots-lt
+  ask robots [lt turn-speed]
+  ifelse test? [
+    ask fauxgos [lt random-normal turn-speed 0.01]
+  ] [
+  ;; TODO
+  ]
+end
 
 to patch-recolor
   set pcolor scale-color red solidity 0 max-confidence
@@ -255,12 +327,12 @@ NIL
 1
 
 MONITOR
-210
-17
-313
-62
+209
+66
+312
+111
 NIL
-gogo:sensor 1
+sense-dist
 17
 1
 11
@@ -296,9 +368,9 @@ NIL
 HORIZONTAL
 
 BUTTON
-115
+228
 15
-178
+291
 48
 NIL
 go
@@ -341,6 +413,23 @@ obstacle-reward-factor
 1
 NIL
 HORIZONTAL
+
+BUTTON
+105
+13
+201
+46
+NIL
+setup-test
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
 
 @#$#@#$#@
 ## WHAT IS IT?

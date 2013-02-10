@@ -78,8 +78,8 @@ to setup-test
   setup-brain
   create-fauxgos 1 [
     set heading 0
-    set turn-speed 1 + random 9
-    set sensor-range 5 + random 15
+    set turn-speed 5
+    set sensor-range 10
     set shape "turtle"
     set size 3
   ]
@@ -87,7 +87,10 @@ to setup-test
     set solid? pxcor = min-pxcor or
                pycor = min-pycor or
                pxcor = max-pxcor or
-               pycor = max-pycor
+               pycor = max-pycor or
+               (pxcor = 25 and pycor > -1) or
+               (pxcor > -1 and pycor = 25) or
+               (pxcor < 0 and pycor < 0 and (pxcor * pxcor + pycor * pycor = 64))
   ]
   set test? true
 end
@@ -134,8 +137,9 @@ to-report sense-dist
     let dist 0
     ask fauxgos [
       hatch-echoes 1 [
-        while [distance myself < sensor-range and not [solid?] of patch-here and can-move? .5] [
-          fd .5
+        set parent myself
+        while [distance myself < sensor-range and not [solid?] of patch-here and can-move? echo-speed] [
+          fd echo-speed
         ]
         set dist distance myself
         die
@@ -213,10 +217,10 @@ end
 ;; Robots reproduce based on their confidence
 to reproduce
   hatch-robots reproduce-amount [
-    rt random-normal 0 1
+    rt random-normal 0 0.1
     set sensor-range sensor-range + random-normal 0 .1
     set color 5 + 10 * random 14
-    set turn-speed turn-speed + random-normal 0 1
+    set turn-speed turn-speed + random-normal 0 .1
   ]
 end
 
@@ -259,7 +263,7 @@ end
 to robots-rt
   ask robots [rt turn-speed]
   ifelse test? [
-    ask fauxgos [rt random-normal turn-speed 0.01]
+    ask fauxgos [rt turn-speed + random-normal 0 0.01]
   ] [
   ;; TODO
   ]
@@ -268,7 +272,7 @@ end
 to robots-lt
   ask robots [lt turn-speed]
   ifelse test? [
-    ask fauxgos [lt random-normal turn-speed 0.01]
+    ask fauxgos [lt turn-speed + random-normal 0 0.01]
   ] [
   ;; TODO
   ]

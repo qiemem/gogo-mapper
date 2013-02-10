@@ -92,6 +92,7 @@ to setup-test
                (pxcor > -1 and pycor = 25) or
                (pxcor < 0 and pycor < 0 and (pxcor * pxcor + pycor * pycor = 64))
   ]
+  ask patches with [solid?] [set pcolor white]
   set test? true
 end
 

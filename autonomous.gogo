@@ -1,0 +1,8 @@
+to test
+forever [
+make "dur ( sensor1 / 100 )
+c, onfor :dur
+wait (:dur + 1)
+]
+end
+

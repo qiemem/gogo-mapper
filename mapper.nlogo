@@ -24,6 +24,8 @@ extensions [ gogo ]
 globals [
   serial-port
   test?
+  lt-degrees
+  controlable-srange
   max-dist        ;; If the sensor reads > max-dist, we say it didn't hit anything
   time-step       ;; how long actions are done for
   max-confidence  ;; A patch can't have solidity > max-confidence; a robot can have confidence > max-confidence, but it only helps in selection, not reproduction
@@ -90,7 +92,7 @@ to setup-test
                pycor = max-pycor or
                (pxcor = 25 and pycor > -1) or
                (pxcor > -1 and pycor = 25) or
-               (pxcor < 0 and pycor < 0 and (pxcor * pxcor + pycor * pycor = 64))
+               (pxcor < 0 and pycor < 0 and (25 > abs (pxcor * pxcor + pycor * pycor - 625) ))
   ]
   ask patches with [solid?] [set pcolor white]
   set test? true
@@ -116,7 +118,7 @@ to go
   sensor-check
   select-robots
   ask robots [reproduce]
-  ifelse sense-dist > 300 [robots-fd] [robots-rt robots-bk]
+  ifelse sense-dist > 500 [robots-fd] [robots-rt robots-bk]
 end
 
 ;; observer procedure
@@ -266,8 +268,21 @@ to robots-rt
   ifelse test? [
     ask fauxgos [rt turn-speed + random-normal 0 0.01]
   ] [
-  ;; TODO
+    gogo-rt
   ]
+end
+
+to gogo-rt
+    gogo:talk-to-output-ports ["a" "b"]
+    gogo:set-output-port-power 7
+    gogo:output-port-on
+    gogo:talk-to-output-ports ["a"]
+    gogo:output-port-reverse
+    wait time-step
+    gogo:talk-to-output-ports ["a" "b"]
+    gogo:output-port-off
+    gogo:talk-to-output-ports ["a"]
+    gogo:output-port-reverse
 end
 
 to robots-lt
@@ -275,10 +290,22 @@ to robots-lt
   ifelse test? [
     ask fauxgos [lt turn-speed + random-normal 0 0.01]
   ] [
-  ;; TODO
+    gogo-lt
   ]
 end
 
+to gogo-lt
+    gogo:talk-to-output-ports ["a" "b"]
+    gogo:set-output-port-power 7
+    gogo:output-port-on
+    gogo:talk-to-output-ports ["b"]
+    gogo:output-port-reverse
+    wait time-step
+    gogo:talk-to-output-ports ["a" "b"]
+    gogo:output-port-off
+    gogo:talk-to-output-ports ["b"]
+    gogo:output-port-reverse
+end
 to patch-recolor
   set pcolor scale-color red solidity 0 max-confidence
 end
@@ -435,6 +462,21 @@ NIL
 NIL
 NIL
 1
+
+SLIDER
+112
+329
+284
+362
+rt-degrees
+rt-degrees
+0
+10
+1
+.1
+1
+NIL
+HORIZONTAL
 
 @#$#@#$#@
 ## WHAT IS IT?

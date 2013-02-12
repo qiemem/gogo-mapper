@@ -24,11 +24,11 @@ extensions [ gogo ]
 globals [
   serial-port
   test?
-  lt-degrees
   controlable-srange
-  max-dist        ;; If the sensor reads > max-dist, we say it didn't hit anything
+  ;; If the sensor reads > max-dist, we say it didn't hit anything
   time-step       ;; how long actions are done for
   max-confidence  ;; A patch can't have solidity > max-confidence; a robot can have confidence > max-confidence, but it only helps in selection, not reproduction
+  previous-hit?
 ]
 
 breed [ robots robot ]
@@ -36,7 +36,7 @@ breed [ fauxgos fauxgo ]  ;; fake gogo board robot for testing
 breed [ echoes echo ]
 
 robots-own [
-  sensor-range  ;; The sensors range in units of the distance the robot travels in time-step
+  sensor-range ;; The sensors range in units of the distance the robot travels in time-step
   confidence    ;; Represents how confident we are in the bot
   turn-speed  ;; degrees the robot thinks it moves at a time
 ]
@@ -57,6 +57,14 @@ patches-own [
   solid?        ;; used for testing
 ]
 
+
+to set-auton
+  set autonomous-mode? true
+end
+
+to set-auton-off
+  set autonomous-mode? false
+end
 
 to setup
   if not gogo:open? [ setup-gogo ]
@@ -81,9 +89,9 @@ to setup-test
   create-fauxgos 1 [
     set heading 0
     set turn-speed 5
-    set sensor-range 10
     set shape "turtle"
     set size 3
+    set sensor-range 10
   ]
   ask patches [
     set solid? pxcor = min-pxcor or
@@ -100,17 +108,15 @@ end
 
 to setup-brain
   ca
-  
-  set max-dist 800
   set time-step 0.05
   set max-confidence 1000
-  
+  set previous-hit? false
   create-robots 1 [
     set heading 0
     set size 5
-    set sensor-range 10
     set confidence max-confidence
-    set turn-speed 5
+    set turn-speed init-turn-speed
+    set sensor-range init-sensor-range
   ]
 end
 
@@ -118,9 +124,19 @@ to go
   sensor-check
   select-robots
   ask robots [reproduce]
-  ifelse sense-dist > 500 [robots-fd] [robots-rt robots-bk]
+  if autonomous-mode? = true
+  [autonomous-move-behavior]
 end
 
+to autonomous-move-behavior
+  ifelse sense-dist > max-dist [robots-fd set previous-hit? false] [robots-rt robots-bk set previous-hit? true ]
+end
+
+to autonomous-move-behavior1
+  ifelse previous-hit? = false
+  [ifelse sense-dist > max-dist [robots-fd set previous-hit? false] [robots-rt robots-bk set previous-hit? true ]]
+  [ifelse sense-dist > max-dist [repeat 10 [robots-bk robots-lt sensor-check] set previous-hit? false] [robots-rt robots-bk set previous-hit? true ]]   
+end
 ;; observer procedure
 ;; Adjusts robots' confidences and patches' solidities based on sensor reading.
 to sensor-check
@@ -155,7 +171,7 @@ end
 ;; robot procedure
 ;; Gets the sensor's output in patches based on what this robot think's the sensor's range is
 to-report get-dist
-  report sensor-range * sense-dist / max-dist
+  report ifelse-value learn-sensor-range? [sensor-range][init-sensor-range] * sense-dist / max-dist
 end
 
 ;; robot procedure
@@ -220,15 +236,19 @@ end
 ;; Robots reproduce based on their confidence
 to reproduce
   hatch-robots reproduce-amount [
-    rt random-normal 0 0.1
-    set sensor-range sensor-range + random-normal 0 .1
+    rt random-normal 0 .1
+    if learn-sensor-range? [
+      set sensor-range sensor-range + random-normal 0 sensor-range-mut-rate
+    ]
     set color 5 + 10 * random 14
-    set turn-speed turn-speed + random-normal 0 .1
+    if learn-turn-speed? [
+      set turn-speed turn-speed + random-normal 0 turn-speed-mut-rate
+    ]
   ]
 end
 
 to robots-fd
-  ask robots [fd random-normal 1 0.1]
+  ask robots [fd random-normal 1 vary-move]
   ifelse test? [
     ask fauxgos [
       let dist random-normal 1 0.1
@@ -245,7 +265,7 @@ to robots-fd
 end
 
 to robots-bk
-  ask robots [bk random-normal 1 0.1]
+  ask robots [bk random-normal 1 vary-move]
   ifelse test? [
     ask fauxgos [
       let dist random-normal 1 0.1
@@ -264,48 +284,55 @@ to robots-bk
 end
 
 to robots-rt
-  ask robots [rt turn-speed]
-  ifelse test? [
-    ask fauxgos [rt turn-speed + random-normal 0 0.01]
-  ] [
-    gogo-rt
+  ask robots [
+    rt random-normal (ifelse-value learn-turn-speed? [turn-speed] [init-turn-speed]) vary-turn
   ]
+  gogo-rt
 end
 
 to gogo-rt
+  ifelse test? [
+    ask fauxgos [rt turn-speed]
+  ] [
     gogo:talk-to-output-ports ["a" "b"]
     gogo:set-output-port-power 7
     gogo:output-port-on
     gogo:talk-to-output-ports ["a"]
     gogo:output-port-reverse
     wait time-step
-    gogo:talk-to-output-ports ["a" "b"]
+    gogo:talk-to-output-ports ["b"]
     gogo:output-port-off
     gogo:talk-to-output-ports ["a"]
+    gogo:output-port-off
     gogo:output-port-reverse
-end
-
-to robots-lt
-  ask robots [lt turn-speed]
-  ifelse test? [
-    ask fauxgos [lt turn-speed + random-normal 0 0.01]
-  ] [
-    gogo-lt
   ]
 end
 
+to robots-lt
+  ask robots [
+    lt random-normal (ifelse-value learn-turn-speed? [turn-speed] [init-turn-speed]) vary-turn
+  ]
+  gogo-lt
+end
+
 to gogo-lt
+  ifelse test? [
+    ask fauxgos [lt turn-speed]
+  ][
     gogo:talk-to-output-ports ["a" "b"]
     gogo:set-output-port-power 7
     gogo:output-port-on
     gogo:talk-to-output-ports ["b"]
     gogo:output-port-reverse
     wait time-step
-    gogo:talk-to-output-ports ["a" "b"]
+    gogo:talk-to-output-ports ["a"]
     gogo:output-port-off
     gogo:talk-to-output-ports ["b"]
+    gogo:output-port-off
     gogo:output-port-reverse
+  ]
 end
+
 to patch-recolor
   set pcolor scale-color red solidity 0 max-confidence
 end
@@ -315,10 +342,10 @@ to robot-recolor
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-322
-15
-837
-551
+481
+21
+996
+557
 50
 50
 5.0
@@ -342,10 +369,10 @@ ticks
 30.0
 
 BUTTON
-9
-14
-75
-47
+13
+10
+79
+43
 NIL
 setup
 NIL
@@ -359,10 +386,10 @@ NIL
 1
 
 MONITOR
-209
-66
-312
-111
+371
+51
+474
+96
 NIL
 sense-dist
 17
@@ -385,10 +412,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-14
-95
-186
-128
+190
+56
+362
+89
 reproduce-amount
 reproduce-amount
 0
@@ -400,10 +427,10 @@ NIL
 HORIZONTAL
 
 BUTTON
-228
-15
-291
-48
+192
+10
+255
+43
 NIL
 go
 T
@@ -417,15 +444,15 @@ NIL
 1
 
 SLIDER
-14
-164
-211
-197
+15
+110
+212
+143
 vacant-patch-reward-factor
 vacant-patch-reward-factor
 0
 100
-1
+5
 1
 1
 NIL
@@ -433,9 +460,9 @@ HORIZONTAL
 
 SLIDER
 14
-207
+149
 212
-240
+182
 obstacle-reward-factor
 obstacle-reward-factor
 0
@@ -447,10 +474,10 @@ NIL
 HORIZONTAL
 
 BUTTON
-105
-13
-201
-46
+85
+10
+181
+43
 NIL
 setup-test
 NIL
@@ -464,14 +491,205 @@ NIL
 1
 
 SLIDER
-112
-329
-284
-362
-rt-degrees
-rt-degrees
+263
+107
+466
+140
+max-dist
+max-dist
+0
+1023
+937
+1
+1
+NIL
+HORIZONTAL
+
+BUTTON
+132
+429
+219
+462
+Forward
+robots-fd
+NIL
+1
+T
+OBSERVER
+NIL
+W
+NIL
+NIL
+1
+
+BUTTON
+128
+486
+223
+519
+Back
+robots-bk
+NIL
+1
+T
+OBSERVER
+NIL
+S
+NIL
+NIL
+1
+
+BUTTON
+33
+456
+125
+489
+Turn Left
+robots-lt
+NIL
+1
+T
+OBSERVER
+NIL
+A
+NIL
+NIL
+1
+
+BUTTON
+225
+453
+326
+486
+Turn Right
+robots-rt
+NIL
+1
+T
+OBSERVER
+NIL
+D
+NIL
+NIL
+1
+
+SWITCH
+268
+10
+455
+43
+autonomous-mode?
+autonomous-mode?
+1
+1
+-1000
+
+SLIDER
+14
+200
+213
+233
+init-turn-speed
+init-turn-speed
 0
 10
+5
+.1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+15
+238
+213
+271
+turn-speed-mut-rate
+turn-speed-mut-rate
+0
+1
+1
+.01
+1
+NIL
+HORIZONTAL
+
+SWITCH
+218
+216
+392
+249
+learn-turn-speed?
+learn-turn-speed?
+0
+1
+-1000
+
+SLIDER
+16
+276
+214
+309
+init-sensor-range
+init-sensor-range
+0
+15
+10
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+16
+313
+214
+346
+sensor-range-mut-rate
+sensor-range-mut-rate
+0
+1
+1
+.01
+1
+NIL
+HORIZONTAL
+
+SWITCH
+220
+288
+410
+321
+learn-sensor-range?
+learn-sensor-range?
+0
+1
+-1000
+
+SLIDER
+16
+357
+188
+390
+vary-move
+vary-move
+0
+1
+0.2
+.1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+232
+357
+404
+390
+vary-turn
+vary-turn
+0
+5
 1
 .1
 1

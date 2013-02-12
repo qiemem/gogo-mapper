@@ -39,15 +39,18 @@ robots-own [
   sensor-range ;; The sensors range in units of the distance the robot travels in time-step
   confidence    ;; Represents how confident we are in the bot
   turn-speed  ;; degrees the robot thinks it moves at a time
+  sensor-position ;; how far in front of the center of rotation the sensor is
 ]
 
 fauxgos-own [
   sensor-range
   turn-speed
+  sensor-position
 ]
 
 echoes-own [
   sensor-range
+  sensor-position
   parent
   hit-patch
 ]
@@ -88,10 +91,11 @@ to setup-test
   setup-brain
   create-fauxgos 1 [
     set heading 0
-    set turn-speed 5
+    set turn-speed 3
+    set sensor-position 3
     set shape "turtle"
-    set size 3
-    set sensor-range 10
+    set size 5
+    set sensor-range 3
   ]
   ask patches [
     set solid? pxcor = min-pxcor or
@@ -117,6 +121,7 @@ to setup-brain
     set confidence max-confidence
     set turn-speed init-turn-speed
     set sensor-range init-sensor-range
+    set sensor-position init-sensor-position
   ]
 end
 
@@ -124,6 +129,7 @@ to go
   sensor-check
   select-robots
   ask robots [reproduce]
+  ask robots [set confidence 0]
   if autonomous-mode? = true
   [autonomous-move-behavior]
 end
@@ -140,6 +146,7 @@ end
 ;; observer procedure
 ;; Adjusts robots' confidences and patches' solidities based on sensor reading.
 to sensor-check
+  ask robots [set confidence confidence - 5 * [solidity] of patch-here]
   ask robots [fire-echo]
   ask robots [retract-echo]
   ask patches [
@@ -150,21 +157,21 @@ to sensor-check
   cd
 end
 
-;; This method will be replaced by whatever scheme we use to send the distance measure via the antennas
 to-report sense-dist
   ifelse test? [
     let dist 0
     ask fauxgos [
       hatch-echoes 1 [
         set parent myself
-        while [distance myself < sensor-range and not [solid?] of patch-here and can-move? echo-speed] [
+        fd sensor-position
+        while [distance myself < (sensor-range + sensor-position) and not [solid?] of patch-here and can-move? echo-speed] [
           fd echo-speed
         ]
-        set dist distance myself
+        set dist distance myself - sensor-position
         die
       ]
     ]
-    report max-dist * (random-normal 0 1 + dist) / [sensor-range] of one-of fauxgos
+    report 1.1 * max-dist * (random-normal 0 .1 + dist) / [sensor-range] of one-of fauxgos
   ] [report gogo:sensor 1]
 end
 
@@ -186,11 +193,12 @@ to fire-echo
   let dist get-dist
   hatch-echoes 1 [
     set size 1
+    fd sensor-position
     pd
     set parent myself
   ]
   ask echoes with [parent = myself] [
-    while [distance myself < dist and can-move? echo-speed] [
+    while [distance myself < (dist + sensor-position) and can-move? echo-speed] [
       let cur-patch patch-here
       ask parent [set confidence confidence + vacant-patch-reward-factor * (5 - [solidity] of cur-patch) / 10]
       fd echo-speed
@@ -210,9 +218,10 @@ end
 to retract-echo
   ask echoes with [parent = myself] [
     if hit-patch != nobody [ask hit-patch [ set solidity solidity + 5 ]]
-    while [distance parent > 1] [
-      bk echo-speed
-      if patch-here != hit-patch [ ask patch-here [ set solidity solidity - 5] ]
+    while [distance parent >= sensor-position] [
+      face parent
+      fd echo-speed
+      if patch-here != hit-patch [ ask patch-here [ set solidity solidity - 1] ]
     ]
     die
   ]
@@ -243,6 +252,9 @@ to reproduce
     set color 5 + 10 * random 14
     if learn-turn-speed? [
       set turn-speed turn-speed + random-normal 0 turn-speed-mut-rate
+    ]
+    if learn-sensor-position? [
+      set sensor-position sensor-position + random-normal 0 sensor-position-mut-rate
     ]
   ]
 end
@@ -285,6 +297,7 @@ end
 
 to robots-rt
   ask robots [
+    fd random-normal 0 0.01
     rt random-normal (ifelse-value learn-turn-speed? [turn-speed] [init-turn-speed]) vary-turn
   ]
   gogo-rt
@@ -310,6 +323,7 @@ end
 
 to robots-lt
   ask robots [
+    fd random-normal 0 0.01
     lt random-normal (ifelse-value learn-turn-speed? [turn-speed] [init-turn-speed]) vary-turn
   ]
   gogo-lt
@@ -499,17 +513,17 @@ max-dist
 max-dist
 0
 1023
-937
+800
 1
 1
 NIL
 HORIZONTAL
 
 BUTTON
-132
-429
-219
-462
+175
+467
+262
+500
 Forward
 robots-fd
 NIL
@@ -523,10 +537,10 @@ NIL
 1
 
 BUTTON
-128
-486
-223
-519
+171
+524
+266
+557
 Back
 robots-bk
 NIL
@@ -540,10 +554,10 @@ NIL
 1
 
 BUTTON
-33
-456
-125
-489
+76
+494
+168
+527
 Turn Left
 robots-lt
 NIL
@@ -557,10 +571,10 @@ NIL
 1
 
 BUTTON
-225
-453
-326
-486
+268
+491
+369
+524
 Turn Right
 robots-rt
 NIL
@@ -593,7 +607,7 @@ init-turn-speed
 init-turn-speed
 0
 10
-5
+2
 .1
 1
 NIL
@@ -608,7 +622,7 @@ turn-speed-mut-rate
 turn-speed-mut-rate
 0
 1
-1
+0.1
 .01
 1
 NIL
@@ -634,7 +648,7 @@ init-sensor-range
 init-sensor-range
 0
 15
-10
+4
 1
 1
 NIL
@@ -649,7 +663,7 @@ sensor-range-mut-rate
 sensor-range-mut-rate
 0
 1
-1
+0.1
 .01
 1
 NIL
@@ -667,10 +681,10 @@ learn-sensor-range?
 -1000
 
 SLIDER
-16
-357
-188
-390
+31
+428
+203
+461
 vary-move
 vary-move
 0
@@ -682,10 +696,10 @@ NIL
 HORIZONTAL
 
 SLIDER
-232
-357
-404
-390
+247
+428
+419
+461
 vary-turn
 vary-turn
 0
@@ -695,6 +709,47 @@ vary-turn
 1
 NIL
 HORIZONTAL
+
+SLIDER
+17
+352
+213
+385
+init-sensor-position
+init-sensor-position
+0
+10
+3
+.1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+16
+388
+213
+421
+sensor-position-mut-rate
+sensor-position-mut-rate
+0
+1
+0.1
+.01
+1
+NIL
+HORIZONTAL
+
+SWITCH
+225
+379
+426
+412
+learn-sensor-position?
+learn-sensor-position?
+0
+1
+-1000
 
 @#$#@#$#@
 ## WHAT IS IT?

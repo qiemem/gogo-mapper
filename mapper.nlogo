@@ -754,39 +754,51 @@ learn-sensor-position?
 @#$#@#$#@
 ## WHAT IS IT?
 
-(a general understanding of what the model is trying to show or explain)
+This model allows students to look into the brain of an autonomous vehicle, like the Roomba, to see one strategy robots might employ to learn both their environment and their own limitations. The student can also take control of the robot to see if she can figure out how to best take advantage of the robot's learning algorithms. The robot's goal is to learn both the layout of its environment and its own physical attributes. There are several difficulties the robot has when trying to map its environment besides the mapping itself. First, it must work with the unreliable data of a single distance sensor of unknown range. Second, it must deal with motors and wheels that can slip, get stuck, get out of sync, and so forth. Finally, it must be able to deal with mistaken conclusions it reached about the environment as it acquires more information about itself. These unpredictabilities are challenges one only encounters when dealing with physical robots. The difficulty that these challenges present is easy to underestimate.
 
 ## HOW IT WORKS
 
-(what rules the agents use to create the overall behavior of the model)
+The view in NetLogo is the robot's conception of the space around it. If a patch is red, the robot suspects there might be an obstacle there. The brighter the red, the more likely the obstacle. The robot is trying to learn the following:
+
+- Which patches correspond to obstacles in its environment
+- How many degrees it turns when issued a turn command (turn-speed)
+- How far its sensor can sense (sensor-range)
+- How far the sensor sits in front of the robot's center (sensor-position)
+
+Furthermore, it must learn if it has made a mistake and correct for that mistake.
+
+To accomplish these goals, the model uses as agent based approach to learning. This algorithm is a rough fushion of a [particle filter](http://en.wikipedia.org/wiki/Particle_filter) and a [genetic algorithm](http://en.wikipedia.org/wiki/Genetic_algorithm). In the view, you will see many turtles. These turtles are the hypotheses the robot has about the states it might be in: let's call these turtles "possible states". Each possible state has slightly different position, heading, turn-speed, sensor-range, and sensor-position. The position of each possible state is a position that the robot thinks it might be in. Same for the rest of the variables. The line coming out of a possible state represents what the sensor is doing if that state is right, given the value of distance sensor.
+
+These possible states are judged on whether or not they agree with the distance sensor's current reading, given the robot's current conception of its environment. Simultaneously, each possible state adjusts the likelihood that the patches in front of it are solid given what it would be if the possible state was correct.
+
+The algorithm does the following each step:
+
+1. Each possible state fires an "echo" out in front of it. The distance of the echo depends on the sensor reading as well as what the possible state thinks the sensor-position and sensor-range are.
+2. As the echo travels out, the confidence in the possible state goes up if the behavior of the echo agrees with what the robot already thinks about the world, and down otherwise.
+3. The echoes are pulled back to each possible state. On their way, they adjust likelihood that the patches they travel over are solid.
+4. The possible states that performed the best are kept and the rest are destroyed.
+5. The remaining possible states reproduce. The children of the possible states have slightly different characteristics than their parents.
+6. The robot decides what behavior to carry out and does it. The possible states try to do the same movement given their turn-speed. Each possible state's movements will vary randomly by a small amount. Thus, if one of the robot's wheels slip, or its motors get slightly out sync, some of the possible states may have undergone similar variations.
+
+The default behavior of the robot is very simple. It will go forward until it encounters an obstacle. It will then turn and back up slightly, and then continue forward.
 
 ## HOW TO USE IT
 
-(how to use the model, including a description of each of the items in the Interface tab)
+First, try setting a little environment for the robot out of various objects. Press setup and go, and watch the robot try to learn about its environment.
 
-## THINGS TO NOTICE
-
-(suggested things for the user to notice while running the model)
+Think you can do a better job then the robot? Turn off autonomous-mode and make it so that you can't see the robot and have your friends set up the robot's environment. Then, using only what you see in NetLogo, try to get the robot to map out its environment.
 
 ## THINGS TO TRY
 
-(suggested things for the user to try to do (move sliders, switches, etc.) with the model)
+Try changing the mutation rates and initial values of the robot's attributes.
 
 ## EXTENDING THE MODEL
 
-(suggested things to add or change in the Code tab to make the model more complicated, detailed, accurate, etc.)
-
-## NETLOGO FEATURES
-
-(interesting or unusual features of NetLogo that the model uses, particularly in the Code tab; or where workarounds were needed for missing features)
-
-## RELATED MODELS
-
-(models in the NetLogo Models Library and elsewhere which are of related interest)
+By default, the robot behavior is very simple and not very smart. Try implementing a better behavioral strategy that will help the robot learn about itself and its environment more quickly.
 
 ## CREDITS AND REFERENCES
 
-(a reference to the model's URL on the web if it has one, as well as any other necessary credits, citations, and links)
+The algorithm is based loosely on lectures by Sebastian Thrun during Stanford's online Introduction to AI class. If he saw this model, however, he would probably be appalled and deny any similarity between what he was talking and what is seen here.
 @#$#@#$#@
 default
 true
